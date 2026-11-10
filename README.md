@@ -7,7 +7,7 @@ An emergency coordination prototype with explainable severity, priority ranking 
 [ResQOps source repository](https://github.com/Merfinhanson/ResQOps)
 
 ![Frontend build verified](https://img.shields.io/badge/frontend_build-verified-147D70)
-![Automated checks 21 passed](https://img.shields.io/badge/automated_checks-21_passed-147D70)
+![CI checks](https://github.com/Merfinhanson/ResQOps/actions/workflows/ci.yml/badge.svg)
 ![SQLite storage](https://img.shields.io/badge/storage-SQLite-288BFF)
 
 ResQOps is a Code Clash 2026 demonstration. It records reports and assignments for evaluation. It does not dispatch responders or notify emergency services.
@@ -213,13 +213,19 @@ Run the demo on a machine with Node.js 24, npm and a writable data directory. Th
 
 ## Testing and verification
 
+### Continuous integration
+
+The [GitHub Actions CI workflow](.github/workflows/ci.yml) runs `npm ci`, backend `npm test` and frontend `npm run build` on pushes to `main` and pull requests. The workflow badge above reflects its latest result. CI does not substitute for browser-based GPS, microphone or live map permission checks.
+
+### Local verification
+
 ```powershell
 npm ls --depth=0
 npm test
 npm run build
 ```
 
-Observed results with Node 24.14.1: **21 tests passed, 0 failed**, and TypeScript plus Vite completed the production build. Node emitted its SQLite experimental notice and Vite reported a large JavaScript chunk (988.87 kB minified). The suite includes all four severity levels, negated risk phrases, review flags, forged public severity, authenticated overrides, and restart persistence.
+The earlier local run with Node 24.14.1 recorded **21 tests passed, 0 failed** (before the newly added classifier regression tests), and TypeScript plus Vite completed the production build. Node emitted its SQLite experimental notice and Vite reported a large JavaScript chunk (988.87 kB minified). The suite includes all four severity levels, negated risk phrases, review flags, forged public severity, authenticated overrides, and restart persistence.
 
 Browser verification used the running app with fictional SQLite records. It submitted a public report, found it after browser reload, created a team, confirmed the nearest eligible team on desktop, then started and resolved the assignment in a mobile viewport. The mobile queue used cards without page overflow. Live HTTP tests independently restarted the API, checked a persisted session and records, and sent two competing requests for the same team. One returned 201 and the other 409.
 
@@ -262,7 +268,7 @@ Protected routes return 401 without an admin session. Public report responses om
 
 Automated evidence lives in [severity.test.js](backend/tests/severity.test.js), [operations.test.js](backend/tests/operations.test.js) and [http.test.js](backend/tests/http.test.js). The browser evidence comes from the previous redesign check. Live GPS permission, microphone transcription and community approval were not exercised.
 
-The six requested classifier spot checks used zero affected people and Other Emergencies. Unconsciousness and absent breathing returned CRITICAL. Serious injuries returned HIGH. “Not unconscious,” “No injuries reported,” and “There is no fire” returned LOW. These examples demonstrate specific phrase handling. Other wording can behave differently.
+New regression tests also cover `no one is breathing`, `no pulse`, `no heartbeat`, and `not conscious`, while retaining denial handling. A focused in-memory check passed 13 classifier cases before the commit; run `npm test` and `npm run build` or inspect CI to verify the full updated suite. The six requested classifier spot checks used zero affected people and Other Emergencies. Unconsciousness and absent breathing returned CRITICAL. Serious injuries returned HIGH. “Not unconscious,” “No injuries reported,” and “There is no fire” returned LOW. These examples demonstrate specific phrase handling. Other wording can behave differently.
 
 ## Screenshots
 

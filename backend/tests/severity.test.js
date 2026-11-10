@@ -50,3 +50,36 @@ test('migration retains legacy effective severity without fabricating missing ov
     assert.equal(classificationFields(overridden).severitySource,'Admin Override');
   } finally {db.close();}
 });
+
+test('critical breathing variants trigger a review for zero affected count', () => {
+  for (const description of ['No one is breathing.', 'Nobody was breathing.']) {
+    const result = classifySeverity({category:'Medical Emergency',peopleAffected:0,title:'Emergency report',description});
+    assert.equal(result.severity,'CRITICAL');
+    assert.equal(result.reviewRequired,true);
+  }
+});
+
+test('no pulse or heartbeat is classified as critical', () => {
+  for (const description of ['No pulse detected.', 'There is no heartbeat.']) {
+    const result = classifySeverity({category:'Medical Emergency',peopleAffected:1,title:'Patient emergency',description});
+    assert.equal(result.severity,'CRITICAL');
+  }
+});
+
+test('loss of consciousness is critical while the negated form is not', () => {
+  assert.equal(classifySeverity({category:'Medical Emergency',peopleAffected:1,title:'Medical report',description:'The patient is not conscious.'}).severity,'CRITICAL');
+  assert.equal(classifySeverity({category:'Other Emergencies',peopleAffected:0,title:'Public report',description:'The person is not unconscious.'}).severity,'LOW');
+});
+
+test('critical additions do not regress existing severity cases', () => {
+  for (const [description,category,count,expected] of [
+    ['Person is unconscious.','Medical Emergency',1,'CRITICAL'],
+    ['A patient is not breathing.','Medical Emergency',1,'CRITICAL'],
+    ['Fire is spreading.','Fire Emergency',0,'HIGH'],
+    ['Two people have minor injuries.','Road Accident',2,'MEDIUM'],
+    ['No injuries reported.','Other Emergencies',0,'LOW'],
+    ['There is no fire.','Other Emergencies',0,'LOW'],
+  ]) {
+    assert.equal(classifySeverity({description,category,peopleAffected:count,title:'Emergency report'}).severity,expected);
+  }
+});

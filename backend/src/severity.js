@@ -1,11 +1,14 @@
 const CATEGORIES = ['Fire Emergency', 'Road Accident', 'Medical Emergency', 'Flood', 'Building Collapse', 'Other Emergencies'];
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-const CLASSIFICATION_VERSION = 'resqops-severity-v2';
+const CLASSIFICATION_VERSION = 'resqops-severity-v3';
 
 const peopleThresholds = [[10, 'CRITICAL'], [5, 'HIGH'], [1, 'MEDIUM']];
 const riskRules = [
   ['CRITICAL', 'Unconsciousness or unresponsiveness', /\b(?:unconscious|unresponsive|not responding|passed out|lost consciousness)\b/g],
   ['CRITICAL', 'Absent breathing or cardiac arrest', /\b(?:not (?:currently )?breathing|isn['’]?t breathing|no (?:signs of )?breathing|stopped breathing|cannot breathe|can['’]?t breathe|cardiac arrest)\b/g],
+  ['CRITICAL', 'No one breathing', /\b(?:no one|nobody)(?: (?:is|was|appears to be))? breathing\b/g],
+  ['CRITICAL', 'Absent pulse or heartbeat', /\b(?:no (?:detectable )?pulse|no (?:detectable )?heart ?beat|pulse (?:is )?absent|heart (?:has )?stopped)\b/g],
+  ['CRITICAL', 'Loss of consciousness', /\b(?:not conscious|no longer conscious)\b/g],
   ['CRITICAL', 'Person reported trapped', /\b(?:trapped|pinned under|unable to escape)\b/g],
   ['CRITICAL', 'Multiple serious casualties', /\bmultiple (?:serious (?:injuries|casualties)|casualties|critically injured)\b/g],
   ['CRITICAL', 'Major explosion or immediate threat to life', /\b(?:major explosion|life threatening|immediate (?:threat to life|danger to life))\b/g],
@@ -64,7 +67,7 @@ function classifySeverity({ category, peopleAffected, title, description, injury
   if (injuryDenied && injuryReported) review.add('Conflicting injury details');
   if (dangerDenied && triggers.some(item => ['HIGH', 'CRITICAL'].includes(item.severity) && !item.reason.includes('threshold'))) review.add('Hazard reported alongside a denial of danger');
   if (peopleAffected === 0 && injuryReported) review.add('Injury reported with zero affected people');
-  if (peopleAffected === 0 && triggers.some(item => /unconsciousness|breathing|person reported trapped/i.test(item.reason))) {
+  if (peopleAffected === 0 && triggers.some(item => /unconsciousness|breathing|person reported trapped|pulse|heartbeat|consciousness/i.test(item.reason))) {
     review.add('A person is described in danger but the affected count is zero');
   }
   if (clauses.some(clause => /\b(?:details (?:are )?unknown|not enough (?:information|details)|(?:unclear|unknown) (?:what happened|whether))\b/.test(clause))) review.add('Incident details are incomplete');
