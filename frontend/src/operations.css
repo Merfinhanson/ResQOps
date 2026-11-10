@@ -1,0 +1,69 @@
+.operations-page {
+  width: min(100% - 32px, 1100px);
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+.ops-page-header, .ops-assignment-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ops-page-header { margin-bottom: 30px; }
+.ops-panel, .ops-assignment-summary { padding: 18px; margin-bottom: 16px; }
+.ops-panel h2, .dispatch-panel h3 { margin: 0 0 12px; }
+.ops-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.ops-fields p { grid-column: 1 / -1; margin: 0; }
+.ops-fields .field-label { margin: 0; }
+.ops-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ops-roster, .ops-recommendations { display: grid; gap: 8px; }
+.ops-recommendations h4 { margin: 0; }
+.ops-team {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dbe4ea;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.ops-team small, .ops-demo-note, .ops-score-meta, .ops-ranking {
+  color: #4c5b6e;
+  font-size: 12px;
+}
+.dispatch-panel { display: grid; gap: 12px; margin: 18px 0; }
+.ops-incident-modal { overflow-y: auto; max-height: 92dvh; }
+.ops-stepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.ops-stepper li { padding: 7px 4px; border-top: 3px solid #d5dee5; text-align: center; font-size: 12px; }
+.ops-stepper li.passed { border-color: #75a799; }
+.ops-stepper li.current { border-color: #147e6f; color: #155e55; font-weight: 700; }
+.ops-confirm { border: 1px solid #d2a755; background: #fff7e5; border-radius: 8px; padding: 12px; }
+.ops-confirm p { margin: 6px 0 12px; }
+.ops-history { padding-left: 20px; margin: 8px 0 0; font-size: 13px; }
+.ops-history li + li { margin-top: 8px; }
+.dispatch-panel .map-panel { margin: 0; min-width: 0; }
+.status-assigned { color: #205888; background: #e7f3ff; }
+.dash-header .ops-teams-link { white-space: nowrap; }
+@media (max-width: 650px) {
+  .dash-header { flex-wrap: wrap; }
+  .dash-header-right { flex: 1 0 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .dash-header .ops-teams-link { font-size: 11px; padding: 6px; }
+  .ops-incident-modal { max-height: 94dvh; }
+  .ops-stepper li { font-size: 10px; }
+  .ops-assignment-summary { align-items: flex-start; }
+}

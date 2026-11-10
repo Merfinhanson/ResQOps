@@ -1,0 +1,8 @@
+{
+  "name": "resqops",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "scripts": {"dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"", "dev:api": "npm --workspace backend run dev", "dev:web": "npm --workspace frontend run dev", "build": "npm --workspace frontend run build", "test": "npm --workspace backend test", "seed": "npm --workspace backend run seed"},
+  "devDependencies": {"concurrently": "^9.1.2"}
+}

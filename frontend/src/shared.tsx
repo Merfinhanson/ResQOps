@@ -1,0 +1,7 @@
+import {Link} from 'react-router-dom';
+import {Activity,AlertTriangle,Flame,HeartPulse,House,ShieldAlert,Truck} from 'lucide-react';
+export const api=async(path:string,options:RequestInit={})=>{const response=await fetch(`/api${path}`,{credentials:'include',headers:{'Content-Type':'application/json',...options.headers},...options});if(response.status===204)return null;const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'Request failed. Please try again.');return data};
+export const categories=['Fire Emergency','Road Accident','Medical Emergency','Flood','Building Collapse','Other Emergencies'] as const;
+export const categoryMeta:Record<string,{icon:any;color:string;tag:string}>= {'Fire Emergency':{icon:Flame,color:'#ed604d',tag:'FIRE'},'Road Accident':{icon:Truck,color:'#e6a538',tag:'ROAD'},'Medical Emergency':{icon:HeartPulse,color:'#40a7a1',tag:'MEDICAL'},Flood:{icon:Activity,color:'#578eea',tag:'FLOOD'},'Building Collapse':{icon:House,color:'#a981d4',tag:'STRUCTURAL'},'Other Emergencies':{icon:ShieldAlert,color:'#8794a8',tag:'OTHER'}};
+export function Brand(){return <Link to="/" className="brand"><span className="brand-mark"><Activity size={21}/></span><span>ResQ<span className="brand-accent">Ops</span><small>EMERGENCY RESPONSE</small></span></Link>}
+export function Notice(){return <div className="notice"><AlertTriangle size={17}/><span><b>Demonstration platform.</b> ResQOps is not monitored by emergency services. For a real emergency, contact your local emergency number.</span></div>}
