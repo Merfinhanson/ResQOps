@@ -5,7 +5,7 @@ ResQOps is an emergency reporting and coordination prototype that connects publi
 [ResQOps source repository](https://github.com/Merfinhanson/ResQOps)
 
 ![Frontend build verified](https://img.shields.io/badge/frontend_build-verified-147D70)
-![Automated checks 10 passed](https://img.shields.io/badge/automated_checks-10_passed-147D70)
+![Automated checks 21 passed](https://img.shields.io/badge/automated_checks-21_passed-147D70)
 ![SQLite storage](https://img.shields.io/badge/storage-SQLite-288BFF)
 
 ResQOps is a Code Clash 2026 demonstration. It records reports and assignments for evaluation. It does not dispatch responders or notify emergency services.
@@ -107,7 +107,7 @@ npm test
 npm run build
 ```
 
-Observed results with Node 24.14.1: dependencies resolved, **10 tests passed, 0 failed**, and TypeScript plus Vite completed the production build. An intermediate TypeScript build rejected `Array.at` under the existing target, so the drawer now uses standard array indexing. Node emitted its SQLite experimental notice. Vite emitted its large chunk warning for the approximately 978 kB minified JavaScript bundle.
+Observed results with Node 24.14.1: **21 tests passed, 0 failed**, and TypeScript plus Vite completed the production build. Node emitted its SQLite experimental notice and Vite reported a large JavaScript chunk. The suite includes all four severity levels, negated risk phrases, review flags, forged public severity, authenticated overrides, and restart persistence.
 
 Browser verification used the running app with fictional SQLite records. It submitted a public report, found it after browser reload, created a team, confirmed the nearest eligible team on desktop, then started and resolved the assignment in a mobile viewport. The mobile queue used cards without page overflow. Live HTTP tests independently restarted the API, checked a persisted session and records, and sent two competing requests for the same team. One returned 201 and the other 409.
 
@@ -137,7 +137,8 @@ Invoke-RestMethod "$api/admin/analytics" -WebSession $judgeSession
 | Request | Response contract |
 | --- | --- |
 | `GET /api/health` | 200 with `{ ok, service }` |
-| `POST /api/incidents` | 201 with `{ incident: { id, category, severity, severityReason, status, createdAt } }`. Invalid submissions return 400. |
+| `POST /api/incidents` | 201 with `{ incident: { id, category, severity, severityReason, severitySource, classificationVersion, reviewRequired, status, createdAt } }`. Invalid submissions return 400. |
+| `PATCH /api/admin/incidents/:id/severity` | Accepts `{ severity, reason }`. Returns the updated incident and audit history. The original assessment stays on the incident. |
 | `GET /api/admin/priority-queue` | 200 with `{ incidents }`. Each row has `priority` and `rank`. Use `?status=Resolved` for resolved records. |
 | `GET /api/admin/teams` | 200 with `{ teams }`, including `availability` and `assignedIncidentId`. |
 | `GET /api/admin/incidents/:id/recommendations` | 200 with `{ assignments, needsLocation, assignedTeam, assignedDistanceKm, recommendations }`. |
@@ -169,7 +170,7 @@ flowchart LR
   X --> H[History retained]
 ```
 
-- **Severity** starts with the six Round 1 categories. The classifier checks critical count and keyword rules before high, medium and low rules. An admin severity override records a reason. Severity is an initial estimate.
+- **Severity** uses the six Round 1 categories and scores the title, description, affected count, and any supplied injury or hazard indicators. The server uses the highest matching rule and stores its original reasons and version. Phrase checks account for common negations and flag uncertain or conflicting details for human review. An authenticated override requires a justification and records the previous and new severity, admin, and time separately. The rules are for demonstration and have not been validated for dispatch or clinical triage.
 - **Priority** is recalculated at query time. The editable `priorityRules` in `operations.js` gives Critical/High/Medium/Low 40/30/18/8 points, up to 25 points for people affected, up to 20 waiting points at one point per ten minutes, and up to 15 category points. Higher scores come first. Ties use the older submission timestamp, then incident ID. Resolved rows are excluded by default.
 - **Suitability** uses a compatibility matrix. Fire uses Fire or Rescue. Road Accident uses Medical or Rescue. Medical Emergency uses Medical. Flood and Building Collapse use Rescue. Other Emergencies use General Emergency or Rescue. Candidates must be unassigned, Available, and have valid coordinates. Haversine uses radians and a 6,371 km radius. Distance ties use team ID.
 - **Assignment** uses `BEGIN IMMEDIATE` and partial unique indexes for one active assignment per incident and team. The server rechecks eligibility in the transaction and stores the assignment and both state changes before committing. Resolution records its timestamp and releases the team in the same transaction. Assigned teams cannot be removed or manually released. Reports with assignment history are retained. Duplicate or test reports without history can be deleted.

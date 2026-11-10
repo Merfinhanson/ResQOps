@@ -11,7 +11,8 @@ const { randomUUID } = require('node:crypto');
 const http = require('node:http');
 const { Server } = require('socket.io');
 const fs = require('node:fs');
-const { classifySeverity, CATEGORIES, SEVERITIES } = require('./severity');
+const { classifySeverity, normalizeCategory, CATEGORIES, SEVERITIES } = require('./severity');
+const { migrateClassification, classificationFields, overrideHistory, overrideSeverity } = require('./classification-store');
 const { mountCircles } = require('./circles');
 const { mountOperations } = require('./operations');
 
@@ -30,6 +31,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS incidents (
 const incidentColumns = new Set(db.prepare('PRAGMA table_info(incidents)').all().map(column => column.name));
 if (!incidentColumns.has('latitude')) db.exec('ALTER TABLE incidents ADD COLUMN latitude REAL');
 if (!incidentColumns.has('longitude')) db.exec('ALTER TABLE incidents ADD COLUMN longitude REAL');
+migrateClassification(db);
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors({ origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials: true }));
@@ -45,18 +47,20 @@ const sessionMiddleware = session({ name:'resqops.sid', secret:process.env.SESSI
 app.use(sessionMiddleware);
 
 const isAdmin = (req,res,next) => req.session?.admin ? next() : res.status(401).json({ error:'Authentication required' });
-const reportSchema = z.object({ title:z.string().trim().min(4).max(120), description:z.string().trim().min(10).max(3000), category:z.enum(CATEGORIES), location:z.string().trim().min(3).max(240), latitude:z.number().min(-90).max(90).optional(), longitude:z.number().min(-180).max(180).optional(), peopleAffected:z.number().int().min(0).max(100000), reporterName:z.string().trim().max(100).optional().or(z.literal('')), contactPhone:z.string().trim().max(40).optional().or(z.literal('')) }).superRefine((v,ctx)=>{if((v.latitude===undefined)!==(v.longitude===undefined))ctx.addIssue({code:z.ZodIssueCode.custom,message:'Latitude and longitude must be provided together',path:['latitude']})});
-const toIncident = row => row && ({ id:row.id, title:row.title, description:row.description, category:row.category, location:row.location, latitude:row.latitude, longitude:row.longitude, peopleAffected:row.people_affected, reporterName:row.reporter_name, contactPhone:row.contact_phone, severity:row.severity, severityReason:row.severity_reason, severityOverridden:Boolean(row.severity_overridden), status:row.status, createdAt:row.created_at, updatedAt:row.updated_at });
+const reportSchema = z.object({ title:z.string().trim().min(4).max(120), description:z.string().trim().min(10).max(3000), category:z.preprocess(normalizeCategory,z.enum(CATEGORIES)), injuryStatus:z.enum(['none','minor','serious','unknown']).optional(), activeDanger:z.boolean().optional(), location:z.string().trim().min(3).max(240), latitude:z.number().min(-90).max(90).optional(), longitude:z.number().min(-180).max(180).optional(), peopleAffected:z.number().int().min(0).max(100000), reporterName:z.string().trim().max(100).optional().or(z.literal('')), contactPhone:z.string().trim().max(40).optional().or(z.literal('')) }).superRefine((v,ctx)=>{if((v.latitude===undefined)!==(v.longitude===undefined))ctx.addIssue({code:z.ZodIssueCode.custom,message:'Latitude and longitude must be provided together',path:['latitude']})});
+const toIncident = row => row && ({ id:row.id, title:row.title, description:row.description, category:row.category, location:row.location, latitude:row.latitude, longitude:row.longitude, peopleAffected:row.people_affected, reporterName:row.reporter_name, contactPhone:row.contact_phone, severity:row.severity, severityReason:row.severity_reason, severityOverridden:Boolean(row.severity_overridden), ...classificationFields(row), status:row.status, createdAt:row.created_at, updatedAt:row.updated_at });
 
 app.get('/api/health', (_req,res) => res.json({ ok:true, service:'ResQOps API' }));
 app.post('/api/incidents', (req,res,next) => {
   try {
     const parsed = reportSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error:'Please check the required fields.', details:parsed.error.flatten().fieldErrors });
-    const data = parsed.data; const { severity, reason } = classifySeverity({ category:data.category, peopleAffected:data.peopleAffected, description:data.description });
+    const data = parsed.data;
+    const assessment = classifySeverity(data);
+    const { severity, reason, version, reviewRequired, reviewReasons, source } = assessment;
     const id = `RQ-${randomUUID().slice(0,8).toUpperCase()}`; const now = new Date().toISOString();
-    db.prepare(`INSERT INTO incidents (id,title,description,category,location,latitude,longitude,people_affected,reporter_name,contact_phone,severity,severity_reason,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Reported',?,?)`).run(id,data.title,data.description,data.category,data.location,data.latitude ?? null,data.longitude ?? null,data.peopleAffected,data.reporterName || null,data.contactPhone || null,severity,reason,now,now);
-    res.status(201).json({ incident:{ id, category:data.category, severity, severityReason:reason, status:'Reported', createdAt:now } });
+    db.prepare(`INSERT INTO incidents (id,title,description,category,location,latitude,longitude,people_affected,reporter_name,contact_phone,severity,severity_reason,automated_severity,classification_reason,classification_version,classified_at,review_required,review_reasons,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Reported',?,?)`).run(id,data.title,data.description,data.category,data.location,data.latitude ?? null,data.longitude ?? null,data.peopleAffected,data.reporterName || null,data.contactPhone || null,severity,reason,severity,reason,version,now,Number(reviewRequired),JSON.stringify(reviewReasons),now,now);
+    res.status(201).json({ incident:{ id, category:data.category, severity, severityReason:reason, severitySource:source, classificationVersion:version, reviewRequired, status:'Reported', createdAt:now } });
   } catch (e) { next(e); }
 });
 app.post('/api/admin/login', async (req,res,next) => {
@@ -72,8 +76,16 @@ app.post('/api/admin/login', async (req,res,next) => {
 app.post('/api/admin/logout', (req,res) => req.session.destroy(err => { if(err) return res.status(500).json({error:'Could not end session'}); res.clearCookie('resqops.sid'); res.json({authenticated:false}); }));
 app.get('/api/admin/session', (req,res) => res.json({ authenticated:Boolean(req.session?.admin), username:req.session?.admin?.username || null }));
 mountOperations({ app, db, isAdmin, toIncident });
-app.get('/api/admin/incidents/:id', isAdmin, (req,res) => { const row=db.prepare('SELECT * FROM incidents WHERE id=?').get(req.params.id); if(!row) return res.status(404).json({error:'Incident not found'}); res.json({incident:toIncident(row)}); });
-app.patch('/api/admin/incidents/:id/severity', isAdmin, (req,res) => { const severity=z.enum(SEVERITIES).safeParse(req.body?.severity); if(!severity.success) return res.status(400).json({error:'Unsupported severity'}); const result=db.prepare('UPDATE incidents SET severity=?,severity_reason=?,severity_overridden=1,updated_at=? WHERE id=?').run(severity.data,'Manually overridden by administrator',new Date().toISOString(),req.params.id); if(!result.changes) return res.status(404).json({error:'Incident not found'}); res.json({incident:toIncident(db.prepare('SELECT * FROM incidents WHERE id=?').get(req.params.id))}); });
+app.get('/api/admin/incidents/:id', isAdmin, (req,res) => { const row=db.prepare('SELECT * FROM incidents WHERE id=?').get(req.params.id); if(!row) return res.status(404).json({error:'Incident not found'}); res.json({incident:toIncident(row), severityHistory:overrideHistory(db,row.id)}); });
+app.patch('/api/admin/incidents/:id/severity', isAdmin, (req,res,next) => {
+  const parsed = z.object({ severity:z.enum(SEVERITIES), reason:z.string().trim().min(8).max(500) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({error:'Select a valid severity and enter a justification of 8–500 characters.'});
+  try {
+    const row = overrideSeverity(db, req.params.id, parsed.data.severity, parsed.data.reason, req.session.admin.username);
+    if (!row) return res.status(404).json({error:'Incident not found'});
+    res.json({incident:toIncident(row), severityHistory:overrideHistory(db,row.id)});
+  } catch (error) { next(error); }
+});
 const httpServer = http.createServer(app);
 const io = new Server(httpServer, { cors:{ origin:process.env.FRONTEND_ORIGIN || 'http://localhost:5173', credentials:true } });
 mountCircles({ app, db, sessionMiddleware, io });

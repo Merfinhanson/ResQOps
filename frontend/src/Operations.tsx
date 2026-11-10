@@ -11,7 +11,26 @@ const teamCategories = ['Fire', 'Medical', 'Rescue', 'General Emergency'];
 const lifecycle = ['Reported', 'Assigned', 'In Progress', 'Resolved'];
 type Recommendation = ResponseTeam & {distanceKm:number;reason:string};
 type Assignment = {id:string;teamId:string;teamName:string;assignedAt:string;startedAt:string|null;resolvedAt:string|null;status:string};
-type DispatchData = {assignments:Assignment[];recommendations:Recommendation[];needsLocation:boolean;assignedTeam:ResponseTeam|null;assignedDistanceKm:number|null};
+type DispatchData = {assignments:Assignment[];recommendations:Recommendation[];needsLocation:boolean;assignedTeam:ResponseTeam|null;assignedDistanceKm:number|null;suitableCategories:string[]};
+type TeamHistoryItem = {id:string;incidentId:string;title:string;status:string;assignedAt:string};
+
+function TeamDetails({team}:{team:ResponseTeam}) {
+  const [history,setHistory]=useState<TeamHistoryItem[]|null>(null);
+  const [error,setError]=useState('');
+  function load() {
+    setHistory(null);setError('');
+    api('/admin/teams/'+team.id+'/history').then(result=>setHistory(result.assignments))
+      .catch(error=>setError(error.message));
+  }
+  return <details onToggle={event=>{if(event.currentTarget.open)load();}}>
+    <summary>View team</summary><code>{team.id}</code><div><code>{team.latitude}, {team.longitude}</code></div>
+    <strong>Assignment history</strong>
+    {error?<p role="alert">{error} <button onClick={load}>Retry</button></p>:history===null?<p>Loading history…</p>:
+      history.length===0?<p>No assignments recorded.</p>:<ul className="ops-history">{history.map(item=><li key={item.id}>
+        <Link to={'/admin?incident='+item.incidentId}>{item.title}</Link> · {item.status}<br/><code>{new Date(item.assignedAt).toLocaleString()}</code>
+      </li>)}</ul>}
+  </details>;
+}
 
 export function IncidentDrawer({children,onClose}:{children:ReactNode;onClose:()=>void}) {
   const drawer = useRef<HTMLDivElement>(null);
@@ -26,7 +45,7 @@ export function IncidentDrawer({children,onClose}:{children:ReactNode;onClose:()
       if (event.key === 'Escape') close.current();
       if (event.key !== 'Tab') return;
       const controls = Array.from(drawer.current?.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], summary'
+        'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], summary'
       ) ?? []).filter(control => control.getClientRects().length);
       const first = controls[0], last = controls[controls.length - 1];
       if (!first || !last) { event.preventDefault(); return; }
@@ -71,6 +90,8 @@ export function TeamsPage() {
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   const [notice,setNotice] = useState('');
+  const [availability,setAvailability] = useState('');
+  const visibleTeams = teams.filter(team=>!availability||team.availability===availability);
   useEffect(() => {
     let active = true;
     api('/admin/teams').then(data => {
@@ -114,10 +135,11 @@ export function TeamsPage() {
     finally { setBusy(false); }
   }
 
-  return <main className="operations-page ops-theme">
-    <header className="ops-page-header"><Brand/><Link className="button outline" to="/admin">Command Dashboard</Link></header>
+  return <main className="operations-page ops-theme rq-teams">
+    <header className="ops-page-header"><Brand/><Link className="button outline" to="/admin">Command Centre</Link></header>
+    <span className="rq-kicker">OPERATIONS / ROSTER</span>
     <h1>Response teams</h1>
-    <p>Demo roster · Assignments are recorded in ResQOps for the hackathon demonstration.</p>
+    <p className="rq-muted">Manage response capabilities, locations, availability, and active assignments.</p>
     {error&&<div className="api-error" role="alert">{error}</div>}
     {notice&&<p role="status">{notice}</p>}
     {ready&&<section className="panel ops-panel">
@@ -131,12 +153,13 @@ export function TeamsPage() {
       </form>
     </section>}
     <section className="panel ops-panel">
-      <h2>Team roster</h2>
+      <div className="rq-panel-heading"><h2>Team roster</h2><select aria-label="Filter team availability" value={availability} onChange={event=>setAvailability(event.target.value)}>
+        <option value="">All availability</option><option>Available</option><option>Busy</option></select></div>
       {!ready&&!error&&<p>Loading teams…</p>}
-      {ready&&!teams.length&&<p>No response teams yet.</p>}
-      <div className="ops-roster">{teams.map(team => <article className="ops-team" key={team.id}>
-        <div><strong>{team.name}</strong><div>{team.category} · {team.availability}</div>
-          <small>{team.id}</small><div>{team.latitude}, {team.longitude}</div>
+      {ready&&!visibleTeams.length&&<p>{availability?'No teams match this availability.':'No response teams yet.'}</p>}
+      <div className="ops-roster">{visibleTeams.map(team => <article className="ops-team" key={team.id}>
+        <div><strong>{team.name}</strong><div>{team.category} · <span className={'rq-availability '+team.availability.toLowerCase()}>{team.availability}</span></div>
+          <TeamDetails team={team}/>
           {team.assignedIncidentId&&<Link to={'/admin?incident='+team.assignedIncidentId}>Assignment {team.assignedIncidentId}</Link>}</div>
         <div className="ops-actions"><button className="button outline" disabled={busy} onClick={()=>setEditing(team)}>Edit</button>
           <button className="button outline" disabled={busy||!!team.assignedIncidentId} onClick={()=>void remove(team)}>Remove</button></div>
@@ -200,8 +223,9 @@ export function IncidentDispatch({incident,teams,onUpdate}:{incident:Incident;te
       </select></label>
       {incident.status!=='Resolved'&&!data.needsLocation&&<div className="ops-recommendations">
         <h4>Suitable available teams</h4>
+        {!!data.suitableCategories?.length&&<p className="rq-muted">Required capabilities: {data.suitableCategories.join(' or ')}</p>}
         {data.recommendations.length===0&&<p>No suitable available team</p>}
-        {data.recommendations.map((team,index)=><article className="ops-team" key={team.id}>
+        {data.recommendations.map((team,index)=><article className={'ops-team'+(index===0?' rq-recommended':'')} key={team.id}>
           <div><strong>{team.name}{index===0?' · Nearest suitable team':''}</strong>
             <div>{team.category} · {team.availability} · {team.distanceKm.toFixed(2)} km</div><small>{team.reason}</small></div>
           <button className="button outline" disabled={busy} onClick={()=>setChoice(team)}>Assign team</button>

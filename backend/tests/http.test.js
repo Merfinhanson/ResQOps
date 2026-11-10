@@ -91,12 +91,57 @@ test('HTTP reports, persistent sessions and teams, atomic competing requests, an
   assert.equal((await admin.request('/admin/teams')).teams[0].availability, 'Available');
   const history = (await admin.request(path+'/recommendations')).assignments[0];
   assert.ok(history.startedAt && history.resolvedAt);
+  const rosterHistory=(await admin.request('/admin/teams/'+team.id+'/history')).assignments;
+  assert.equal(rosterHistory[0].incidentId,assigned.incident.id);
+  assert.equal(rosterHistory[0].status,'Resolved');
   assert.equal((await admin.request('/admin/priority-queue')).incidents.length, 1);
   assert.equal((await admin.request('/admin/priority-queue?status=Resolved')).incidents[0].id, assigned.incident.id);
   const duplicate = [incident.id, second.id].find(id => id !== assigned.incident.id);
   await admin.request('/admin/incidents/'+duplicate, 204, 'DELETE');
   assert.equal((await getStats()).total, 1);
   await admin.request(path, 409, 'DELETE');
+});
+
+test('public severity is server-owned and authorized overrides preserve evidence and update queue and metrics', async t => {
+  const server = fixture(t);
+  await server.start();
+  const citizen = server.client();
+  const admin = server.client();
+  const form = {
+    title: 'Fictional collision', category: ' ROAD-ACCIDENT ', location: 'Demo junction',
+    latitude: 13.08, longitude: 80.27, peopleAffected: 1,
+    description: 'No injuries reported, but the driver could be unconscious.',
+    severity: 'LOW', severityReason: 'Forged', reviewRequired: false,
+  };
+  const { incident } = await citizen.request('/incidents', 201, 'POST', form);
+  assert.equal(incident.category,'Road Accident');
+  assert.equal(incident.severity,'CRITICAL');
+  assert.equal(incident.severitySource,'Rule-Based');
+  assert.equal(incident.reviewRequired,true);
+  assert.doesNotMatch(incident.severityReason,/Forged/);
+  const path='/admin/incidents/'+incident.id;
+  const reason='Operator verified the person is responsive and breathing.';
+  await citizen.request(path+'/severity',401,'PATCH',{severity:'MEDIUM',reason});
+  await admin.request('/admin/login',200,'POST',{username:'judge-test',password:'Temporary-test-pass!'});
+  await admin.request(path+'/severity',400,'PATCH',{severity:'MEDIUM'});
+  const before=(await admin.request('/admin/priority-queue?severity=CRITICAL')).incidents[0];
+  const changed=await admin.request(path+'/severity',200,'PATCH',{severity:'MEDIUM',reason});
+  assert.equal(changed.incident.severity,'MEDIUM');
+  assert.equal(changed.incident.automatedSeverity,'CRITICAL');
+  assert.equal(changed.incident.classificationReason,incident.severityReason);
+  assert.equal(changed.incident.severitySource,'Admin Override');
+  assert.deepEqual(changed.severityHistory.map(({previousSeverity,newSeverity,adminId,reason})=>[previousSeverity,newSeverity,adminId,reason]),
+    [['CRITICAL','MEDIUM','judge-test',reason]]);
+  assert.ok(Date.parse(changed.severityHistory[0].changedAt));
+  assert.equal((await admin.request('/admin/analytics')).critical,0);
+  assert.equal((await admin.request('/admin/priority-queue?severity=CRITICAL')).incidents.length,0);
+  const after=(await admin.request('/admin/priority-queue?severity=MEDIUM')).incidents[0];
+  assert.ok(after.priority.score<before.priority.score);
+  assert.equal(after.latitude,form.latitude);
+  await server.stop();
+  await server.start();
+  const persisted=await admin.request(path);
+  assert.deepEqual(persisted,changed);
 });
 
 test('demo seed is idempotent and adds visibly labelled incident and team fixtures', async t => {

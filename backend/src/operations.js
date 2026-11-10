@@ -122,6 +122,14 @@ function mountOperations({ app, db, isAdmin, toIncident }) {
   route('get', '/priority-queue', getQueue(true));
   route('get', '/incidents', getQueue(false));
   route('get', '/teams', (_req, res) => res.json({ teams: teams() }));
+  route('get', '/teams/:id/history', (req, res) => {
+    const current = team(req.params.id);
+    const assignments = db.prepare(`SELECT a.id,a.incident_id incidentId,i.title,a.status,
+      a.assigned_at assignedAt,a.started_at startedAt,a.resolved_at resolvedAt
+      FROM incident_assignments a JOIN incidents i ON i.id=a.incident_id
+      WHERE a.team_id=? ORDER BY a.assigned_at DESC,a.rowid DESC`).all(current.id);
+    res.json({ assignments });
+  });
   route('post', '/teams', (req, res) => {
     const data = parse(teamSchema, req.body);
     const id = `TEAM-${randomUUID()}`;
@@ -156,7 +164,7 @@ function mountOperations({ app, db, isAdmin, toIncident }) {
     const active = assignments.find(a => !a.resolvedAt);
     const assignedTeam = active ? team(active.teamId) : null;
     const assignedDistanceKm = assignedTeam && !needsLocation ? distanceKm(row, assignedTeam) : null;
-    res.json({ assignments, needsLocation, assignedTeam, assignedDistanceKm,
+    res.json({ assignments, needsLocation, assignedTeam, assignedDistanceKm, suitableCategories: capabilities[row.category] ?? [],
       recommendations: row.status === 'Resolved' || active ? [] : recommend(row) });
   });
   route('patch', '/incidents/:id/location', (req, res) => {
@@ -226,7 +234,8 @@ function mountOperations({ app, db, isAdmin, toIncident }) {
       COUNT(*) FILTER(WHERE status='Resolved') completedAssignments FROM incident_assignments`).get();
     res.json({ ...metrics, ...availability, ...assignments,
       categories: db.prepare('SELECT category,COUNT(*) count FROM incidents GROUP BY category').all(),
-      severities: db.prepare('SELECT severity,COUNT(*) count FROM incidents GROUP BY severity').all() });
+      severities: db.prepare('SELECT severity,COUNT(*) count FROM incidents GROUP BY severity').all(),
+      statuses: db.prepare('SELECT status,COUNT(*) count FROM incidents GROUP BY status').all() });
   };
   route('get', '/analytics', analytics);
   route('get', '/stats', analytics);
